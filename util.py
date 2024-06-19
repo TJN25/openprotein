@@ -167,24 +167,25 @@ def calculate_dihedral_angles(atomic_coords, use_gpu):
     atomic_coords = atomic_coords.contiguous().view(-1, 3)
 
     zero_tensor = torch.zeros(1)
-    if use_gpu:
-        zero_tensor = zero_tensor.cuda()
+    device = 'mps' if use_gpu else 'cpu'
+    zero_tensor = zero_tensor.to(device)
 
 
 
     angles = torch.cat((zero_tensor,
                         zero_tensor,
-                        compute_dihedral_list(atomic_coords),
+                        compute_dihedral_list(atomic_coords, use_gpu),
                         zero_tensor)).view(-1, 3)
     return angles
 
-def compute_cross(tensor_a, tensor_b, dim):
+def compute_cross(tensor_a, tensor_b, dim, *, device):
 
     result = []
 
-    x = torch.zeros(1).long()
-    y = torch.ones(1).long()
+    x = torch.zeros(1).long().to(device)
+    y = torch.ones(1).long().to(device)
     z = torch.ones(1).long() * 2
+    z = z.to(device)
 
     ax = torch.index_select(tensor_a, dim, x).squeeze(dim)
     ay = torch.index_select(tensor_a, dim, y).squeeze(dim)
@@ -203,34 +204,36 @@ def compute_cross(tensor_a, tensor_b, dim):
     return result
 
 
-def compute_atan2(y_coord, x_coord):
+def compute_atan2(y_coord, x_coord, use_gpu = True):
     # TODO: figure out of eps is needed here
+    device = 'mps' if use_gpu else 'cpu'
+
     eps = 10 ** (-4)
-    ans = torch.atan(y_coord / (x_coord + eps)) # x > 0
-    ans = torch.where((y_coord >= 0) & (x_coord < 0), ans + PI_TENSOR, ans)
-    ans = torch.where((y_coord < 0) & (x_coord < 0), ans - PI_TENSOR, ans)
-    ans = torch.where((y_coord > 0) & (x_coord == 0), PI_TENSOR / 2, ans)
-    ans = torch.where((y_coord < 0) & (x_coord == 0), -PI_TENSOR / 2, ans)
+    ans = torch.atan(y_coord / (x_coord + eps)).to(device) # x > 0
+    ans = torch.where((y_coord >= 0) & (x_coord < 0), ans + PI_TENSOR.to(device), ans)
+    ans = torch.where((y_coord < 0) & (x_coord < 0), ans - PI_TENSOR.to(device), ans)
+    ans = torch.where((y_coord > 0) & (x_coord == 0), PI_TENSOR.to(device) / 2, ans)
+    ans = torch.where((y_coord < 0) & (x_coord == 0), -PI_TENSOR.to(device) / 2, ans)
     return ans
 
 
-def compute_dihedral_list(atomic_coords):
+def compute_dihedral_list(atomic_coords, use_gpu):
     # atomic_coords is -1 x 3
     ba = atomic_coords[1:] - atomic_coords[:-1]
     ba_normalized = ba / ba.norm(dim=1).unsqueeze(1)
     ba_neg = -1 * ba_normalized
-
-    n1_vec = compute_cross(ba_normalized[:-2], ba_neg[1:-1], dim=1)
-    n2_vec = compute_cross(ba_neg[1:-1], ba_normalized[2:], dim=1)
+    device = 'mps' if use_gpu else 'cpu'
+    n1_vec = compute_cross(ba_normalized[:-2], ba_neg[1:-1], dim=1, device=device)
+    n2_vec = compute_cross(ba_neg[1:-1], ba_normalized[2:], dim=1, device=device)
 
     n1_vec_normalized = n1_vec / n1_vec.norm(dim=1).unsqueeze(1)
     n2_vec_normalized = n2_vec / n2_vec.norm(dim=1).unsqueeze(1)
 
-    m1_vec = compute_cross(n1_vec_normalized, ba_neg[1:-1], dim=1)
+    m1_vec = compute_cross(n1_vec_normalized, ba_neg[1:-1], dim=1, device=device)
 
     x_value = torch.sum(n1_vec_normalized * n2_vec_normalized, dim=1)
     y_value = torch.sum(m1_vec * n2_vec_normalized, dim=1)
-    return compute_atan2(y_value, x_value)
+    return compute_atan2(y_value, x_value, use_gpu)
 
 
 def write_pdb(file_name, aa_sequence, residue_coords):
@@ -281,9 +284,9 @@ def calc_pairwise_distances(chain_a, chain_b, use_gpu):
     distance_matrix = torch.Tensor(chain_a.size()[0], chain_b.size()[0]).type(torch.float)
     # add small epsilon to avoid boundary issues
     epsilon = 10 ** (-4) * torch.ones(chain_a.size(0), chain_b.size(0))
-    if use_gpu:
-        distance_matrix = distance_matrix.cuda()
-        epsilon = epsilon.cuda()
+    device = 'mps' if use_gpu else 'cpu'
+    distance_matrix = distance_matrix.to(device)
+    epsilon = epsilon.to(device)
 
     for idx, row in enumerate(chain_a.split(1)):
         distance_matrix[idx] = torch.sum((row.expand_as(chain_b) - chain_b) ** 2, 1).view(1, -1)
@@ -421,8 +424,8 @@ def pass_messages(aa_features, message_transformation, use_gpu):
         .transpose(1, 2).transpose(0, 1)
 
     eye_inverted = torch.ones(eye.size(), dtype=torch.uint8) - eye
-    if use_gpu:
-        eye_inverted = eye_inverted.cuda()
+    device = 'mps' if use_gpu else 'cpu'
+    eye_inverted = eye_inverted.to(device)
     features_repeated = aa_features.repeat((aa_count, 1)).view((aa_count, aa_count, feature_size))
     # (aa_count^2 - aa_count) x 2 x aa_features     (all pairs except for reflexive connections)
     aa_messages = torch.stack((features_repeated.transpose(0, 1), features_repeated))\
@@ -475,9 +478,9 @@ def dihedral_to_point(dihedral, use_gpu, bond_lengths=BOND_LENGTHS,
     r_cos_theta = bond_lengths * torch.cos(PI_TENSOR - bond_angles)
     r_sin_theta = bond_lengths * torch.sin(PI_TENSOR - bond_angles)
 
-    if use_gpu:
-        r_cos_theta = r_cos_theta.cuda()
-        r_sin_theta = r_sin_theta.cuda()
+    device = 'mps' if use_gpu else 'cpu'
+    r_cos_theta = r_cos_theta.to(device)
+    r_sin_theta = r_sin_theta.to(device)
 
     point_x = r_cos_theta.view(1, 1, -1).repeat(num_steps, batch_size, 1)
     point_y = torch.cos(dihedral) * r_sin_theta
@@ -524,13 +527,13 @@ def point_to_coordinate(points, use_gpu, num_fragments):
     Triplet = collections.namedtuple('Triplet', 'a, b, c')
     batch_size = points.shape[1]
 
+    device = 'mps' if use_gpu else 'cpu'
     init_coords = []
     for row in PNERF_INIT_MATRIX:
         row_tensor = row\
                 .repeat([num_fragments * batch_size, 1])\
                 .view(num_fragments, batch_size, NUM_DIMENSIONS)
-        if use_gpu:
-            row_tensor = row_tensor.cuda()
+        row_tensor = row_tensor.to(device)
         init_coords.append(row_tensor)
 
     init_coords = Triplet(*init_coords)  # NUM_DIHEDRALS x [NUM_FRAGS, BATCH_SIZE, NUM_DIMENSIONS]
@@ -541,7 +544,7 @@ def point_to_coordinate(points, use_gpu, num_fragments):
 
     # [NUM_FRAGS x FRAG_SIZE, BATCH_SIZE, NUM_DIMENSIONS]
     padding_tensor = torch.zeros((padding, points.size(1), points.size(2)))
-    points = torch.cat((points, padding_tensor))
+    points = torch.cat((points.to(device), padding_tensor.to(device)))
 
     points = points.view(num_fragments, -1, batch_size,
                          NUM_DIMENSIONS)  # [NUM_FRAGS, FRAG_SIZE, BATCH_SIZE, NUM_DIMENSIONS]
@@ -568,12 +571,12 @@ def point_to_coordinate(points, use_gpu, num_fragments):
         """
         bc = F.normalize(prev_three_coords.c - prev_three_coords.b, dim=-1)
         n = F.normalize(compute_cross(prev_three_coords.b - prev_three_coords.a,
-                                      bc, dim=2 if multi_m else 1), dim=-1)
+                                      bc, dim=2 if multi_m else 1, device=device), dim=-1)
         if multi_m:  # multiple fragments, one atom at a time
-            m = torch.stack([bc, compute_cross(n, bc, dim=2), n]).permute(1, 2, 3, 0)
+            m = torch.stack([bc, compute_cross(n, bc, dim=2, device=device), n]).permute(1, 2, 3, 0)
         else:  # single fragment, reconstructed entirely at once.
             s = point.shape + (3,)
-            m = torch.stack([bc, compute_cross(n, bc, dim=1), n]).permute(1, 2, 0)
+            m = torch.stack([bc, compute_cross(n, bc, dim=1, device=device), n]).permute(1, 2, 0)
             m = m.repeat(s[0], 1, 1).view(s)
         coord = torch.squeeze(torch.matmul(m, point.unsqueeze(3)),
                               dim=3) + prev_three_coords.c
@@ -591,22 +594,23 @@ def point_to_coordinate(points, use_gpu, num_fragments):
                                     prev_three_coords.c,
                                     coord)
 
-    coords_pretrans = torch.stack(coords_list).permute(1, 0, 2, 3)
+    coords_pretrans = torch.stack(coords_list).permute(1, 0, 2, 3).to(device)
 
     # Loop backwards over NUM_FRAGS to align the individual fragments. For each
     # next fragment, we transform the fragments we have already iterated over
     # (coords_trans) to be aligned with the next fragment
     coords_trans = coords_pretrans[-1]
-    for idx in torch.arange(end=-1, start=coords_pretrans.shape[0] - 2, step=-1).split(1, dim=0):
+    coords_trans = coords_trans.to(device)
+    for idx in torch.arange(end=-1, start=coords_pretrans.shape[0] - 2, step=-1).to(device).split(1, dim=0):
         # Transform the fragments that we have already iterated over to be
         # aligned with the next fragment `coords_trans`
-        transformed_coords = extend(Triplet(*[di.index_select(0, idx).squeeze(0)
+        transformed_coords = extend(Triplet(*[di.to(device).index_select(0, idx).to(device).squeeze(0)
                                               for di in prev_three_coords]),
-                                    coords_trans, False)
+                                    coords_trans, False).to(device)
         coords_trans = torch.cat(
             [coords_pretrans.index_select(0, idx).squeeze(0), transformed_coords], 0)
 
-    coords_to_pad = torch.index_select(coords_trans, 0, torch.arange(total_num_angles - 1))
+    coords_to_pad = torch.index_select(coords_trans, 0, torch.arange(total_num_angles - 1).to(device)).to(device)
 
     coords = F.pad(coords_to_pad, (0, 0, 0, 0, 1, 0))
 

@@ -22,6 +22,7 @@ class BaseModel(nn.Module):
         self.embedding_size = embedding_size
         self.historical_rmsd_avg_values = list()
         self.historical_drmsd_avg_values = list()
+        self.base_device = 'mps' if use_gpu else 'cpu'
 
     def get_embedding_size(self):
         return self.embedding_size
@@ -30,21 +31,21 @@ class BaseModel(nn.Module):
         max_len = max([s.size(0) for s in original_aa_string])
         seqs = []
         for tensor in original_aa_string:
-            padding_to_add = torch.zeros(max_len-tensor.size(0)).int()
+            padding_to_add = torch.zeros(max_len-tensor.size(0)).int().to(self.base_device)
+            tensor = tensor.to(self.base_device)
             seqs.append(torch.cat((tensor, padding_to_add)))
 
-        data = torch.stack(seqs).transpose(0, 1)
+        data = torch.stack(seqs).transpose(0, 1).to(self.base_device)
 
         # one-hot encoding
         start_compute_embed = time.time()
         arange_tensor = torch.arange(21).int().repeat(
             len(original_aa_string), 1
-        ).unsqueeze(0).repeat(max_len, 1, 1)
+        ).unsqueeze(0).repeat(max_len, 1, 1).to(self.base_device)
         data_tensor = data.unsqueeze(2).repeat(1, 1, 21)
         embed_tensor = (arange_tensor == data_tensor).float()
 
-        if self.use_gpu:
-            embed_tensor = embed_tensor.cuda()
+        embed_tensor = embed_tensor.to(self.base_device)
 
         end = time.time()
         write_out("Embed time:", end - start_compute_embed)
@@ -52,13 +53,14 @@ class BaseModel(nn.Module):
         return embed_tensor
 
     def compute_loss(self, minibatch):
-        (original_aa_string, actual_coords_list, _) = minibatch
+        original_aa_string, actual_coords_list, _ = minibatch
+        
+        # original_aa_string = (original_aa_string.index(0).to(self.base_device))
 
         emissions, _backbone_atoms_padded, _batch_sizes = \
             self._get_network_emissions(original_aa_string)
         actual_coords_list_padded = torch.nn.utils.rnn.pad_sequence(actual_coords_list)
-        if self.use_gpu:
-            actual_coords_list_padded = actual_coords_list_padded.cuda()
+        actual_coords_list_padded = actual_coords_list_padded.to(self.base_device)
         start = time.time()
         if isinstance(_batch_sizes[0], int):
             _batch_sizes = torch.tensor(_batch_sizes)
@@ -70,9 +72,7 @@ class BaseModel(nn.Module):
         #                                           actual_coords_list_padded,
         #                                           batch_sizes)
         write_out("Angle calculation time:", time.time() - start)
-        if self.use_gpu:
-            emissions_actual = emissions_actual.cuda()
-            # drmsd_avg = drmsd_avg.cuda()
+        emissions_actual = emissions_actual.to(self.base_device)
         angular_loss = calc_angular_difference(emissions, emissions_actual)
 
         return angular_loss  # + drmsd_avg
@@ -139,9 +139,8 @@ class BaseModel(nn.Module):
         prim = data_total[0][0]
         pos = data_total[0][1]
         pos_pred = data_total[0][3]
-        if self.use_gpu:
-            pos = pos.cuda()
-            pos_pred = pos_pred.cuda()
+        pos = pos.to(self.base_device)
+        pos_pred = pos_pred.to(self.base_device)
         angles = calculate_dihedral_angles(pos, self.use_gpu)
         angles_pred = calculate_dihedral_angles(pos_pred, self.use_gpu)
         write_to_pdb(get_structure_from_angles(prim, angles), "test")

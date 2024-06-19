@@ -129,11 +129,12 @@ class TMDataset(Dataset):
                 assert remapped_labels_crf_hmm.size() == labels.size()
                 assert remapped_labels_crf_marg.size() == labels.size()
 
+            device = 'mps' if use_gpu else 'cpu'
             if use_gpu:
                 if labels is not None:
-                    labels = labels.cuda()
-                remapped_labels_crf_hmm = remapped_labels_crf_hmm.cuda()
-                remapped_labels_crf_marg = remapped_labels_crf_marg.cuda()
+                    labels = labels.to(device)
+                remapped_labels_crf_hmm = remapped_labels_crf_hmm.to(device)
+                remapped_labels_crf_marg = remapped_labels_crf_marg.to(device)
             aa_list.append(aa_tmp_list_tensor)
             labels_list.append(labels)
             remapped_labels_list_crf_hmm.append(remapped_labels_crf_hmm)

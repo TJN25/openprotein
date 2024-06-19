@@ -7,6 +7,7 @@ For license information, please see the LICENSE file in the root directory.
 import time
 import numpy as np
 import requests
+import torch
 import torch.optim as optim
 from util import set_experiment_id, write_out, write_model_to_disk, write_result_summary
 
@@ -19,8 +20,8 @@ def train_model(data_set_identifier, model, train_loader, validation_loader,
 
     validation_dataset_size = validation_loader.dataset.__len__()
 
-    if use_gpu:
-        model = model.cuda()
+    device = 'mps' if use_gpu else 'cpu'
+    model = model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -39,9 +40,17 @@ def train_model(data_set_identifier, model, train_loader, validation_loader,
         optimizer.zero_grad()
         model.zero_grad()
         loss_tracker = np.zeros(0)
+        if device != 'cpu':
+            torch.set_default_device('cpu')
         for _minibatch_id, training_minibatch in enumerate(train_loader, 0):
+            if device != 'cpu':
+                if torch.cuda.is_available():
+                    torch.set_default_device('cuda')
+                elif torch.backends.mps.is_available():
+                    torch.set_default_device('mps')
             minibatches_proccesed += 1
             start_compute_loss = time.time()
+            training_minibatch = training_minibatch
             loss = model.compute_loss(training_minibatch)
             write_out("Train loss:", float(loss))
             start_compute_grad = time.time()
@@ -53,6 +62,8 @@ def train_model(data_set_identifier, model, train_loader, validation_loader,
             optimizer.step()
             optimizer.zero_grad()
             model.zero_grad()
+            if device != 'cpu':
+                torch.set_default_device('cpu')
 
             # for every eval_interval samples, plot performance on the validation set
             if minibatches_proccesed % eval_interval == 0:

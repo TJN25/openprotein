@@ -179,8 +179,8 @@ def process_file(input_file, output_file, use_gpu):
                   .view(9, -1).transpose(0, 1).unsqueeze(1)
         pos_angstrom = pos / 100
 
-        if use_gpu:
-            pos_angstrom = pos_angstrom.cuda()
+        device = 'mps' if use_gpu else 'cpu'
+        pos_angstrom = pos_angstrom.to(device)
 
         # map to angles and back to tertiary
         angles, batch_sizes = calculate_dihedral_angles_over_minibatch(pos_angstrom,

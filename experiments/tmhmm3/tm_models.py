@@ -90,13 +90,12 @@ class TMHMM3(openprotein.BaseModel):
         self.topology_01loss_values = []
 
         # if on GPU, move state to GPU memory
-        if self.use_gpu:
-            self.crf_model = self.crf_model.cuda()
-            self.bi_lstm = self.bi_lstm.cuda()
-            self.hidden_to_labels = self.hidden_to_labels.cuda()
-            crf_transitions_mask = crf_transitions_mask.cuda()
-            crf_start_mask = crf_start_mask.cuda()
-            crf_end_mask = crf_end_mask.cuda()
+        self.crf_model = self.crf_model.to(self.base_device)
+        self.bi_lstm = self.bi_lstm.to(self.base_device)
+        self.hidden_to_labels = self.hidden_to_labels.to(self.base_device)
+        crf_transitions_mask = crf_transitions_mask.to(self.base_device)
+        crf_start_mask = crf_start_mask.to(self.base_device)
+        crf_end_mask = crf_end_mask.to(self.base_device)
 
         # compute mask matrix from allow transitions list
         for i in range(num_tags):
@@ -197,8 +196,7 @@ class TMHMM3(openprotein.BaseModel):
             else:
                 tensor = list([self.encode_amino_acid(aa) for aa in aa_list])
                 tensor = torch.FloatTensor(tensor)
-            if self.use_gpu:
-                tensor = tensor.cuda()
+            tensor = tensor.to(self.base_device)
             embed_list.append(tensor)
         return embed_list
 
@@ -206,9 +204,8 @@ class TMHMM3(openprotein.BaseModel):
         # number of layers (* 2 since bidirectional), minibatch_size, hidden size
         initial_hidden_state = torch.zeros(1 * 2, minibatch_size, self.hidden_size)
         initial_cell_state = torch.zeros(1 * 2, minibatch_size, self.hidden_size)
-        if self.use_gpu:
-            initial_hidden_state = initial_hidden_state.cuda()
-            initial_cell_state = initial_cell_state.cuda()
+        initial_hidden_state = initial_hidden_state.to(self.base_device)
+        initial_cell_state = initial_cell_state.to(self.base_device)
         self.hidden_layer = (autograd.Variable(initial_hidden_state),
                              autograd.Variable(initial_cell_state))
 
@@ -220,10 +217,9 @@ class TMHMM3(openprotein.BaseModel):
         inout_select = torch.zeros(1, dtype=torch.long)
         outin_select = torch.ones(1, dtype=torch.long)
         signal_select = torch.ones(1, dtype=torch.long) * 2
-        if emissions.is_cuda:
-            inout_select = inout_select.cuda()
-            outin_select = outin_select.cuda()
-            signal_select = signal_select.cuda()
+        inout_select = inout_select.to(self.base_device)
+        outin_select = outin_select.to(self.base_device)
+        signal_select = signal_select.to(self.base_device)
         inout = torch.index_select(emissions, 2, inout_select)
         outin = torch.index_select(emissions, 2, outin_select)
         signal = torch.index_select(emissions, 2, signal_select)
@@ -241,8 +237,7 @@ class TMHMM3(openprotein.BaseModel):
         input_sequences = [x for x in self.embed(original_aa_string)]
         input_sequences_padded = torch.nn.utils.rnn.pad_sequence(input_sequences)
         batch_sizes = torch.IntTensor(list([x.size(0) for x in input_sequences]))
-        if input_sequences_padded.is_cuda:
-            batch_sizes = batch_sizes.cuda()
+        batch_sizes = batch_sizes.to(self.base_device)
 
         actual_labels = torch.nn.utils.rnn.pad_sequence([l for l in labels_to_use])
         emissions = self._get_network_emissions(input_sequences_padded)
@@ -265,8 +260,7 @@ class TMHMM3(openprotein.BaseModel):
         return loss
 
     def forward(self, input_sequences_padded) -> Tuple[torch.Tensor, torch.Tensor]:
-        if input_sequences_padded.is_cuda or input_sequences_padded.is_cuda:
-            input_sequences_padded = input_sequences_padded.cuda()
+        input_sequences_padded = input_sequences_padded.to(self.base_device)
         emissions = self._get_network_emissions(input_sequences_padded)
 
         return emissions, \

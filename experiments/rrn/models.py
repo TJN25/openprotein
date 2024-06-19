@@ -40,8 +40,7 @@ class RrnModel(openprotein.BaseModel):
             initial_pos_from_aa_string(original_aa_string, self.use_gpu)
         embedding_padded = self.embed(original_aa_string)
 
-        if self.use_gpu:
-            backbone_atoms_padded = backbone_atoms_padded.cuda()
+        backbone_atoms_padded = backbone_atoms_padded.to(self.base_device)
 
         for _ in range(self.recurrent_steps):
             combined_features = torch.cat(
@@ -70,8 +69,7 @@ class RrnModel(openprotein.BaseModel):
         _, backbone_atoms_padded, batch_sizes = \
             self._get_network_emissions(original_aa_string)
         actual_coords_list_padded = torch.nn.utils.rnn.pad_sequence(actual_coords_list)
-        if self.use_gpu:
-            actual_coords_list_padded = actual_coords_list_padded.cuda()
+        actual_coords_list_padded = actual_coords_list_padded.to(self.base_device)
         start = time.time()
         if isinstance(batch_sizes[0], int):
             batch_sizes = torch.tensor(batch_sizes)
@@ -80,7 +78,6 @@ class RrnModel(openprotein.BaseModel):
                                                   actual_coords_list_padded,
                                                   batch_sizes)
         write_out("drmsd calculation time:", time.time() - start)
-        if self.use_gpu:
-            drmsd_avg = drmsd_avg.cuda()
+        drmsd_avg = drmsd_avg.to(self.base_device)
 
         return drmsd_avg

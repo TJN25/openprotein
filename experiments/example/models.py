@@ -23,6 +23,7 @@ class ExampleModel(openprotein.BaseModel):
     def __init__(self, embedding_size, minibatch_size, use_gpu):
         super(ExampleModel, self).__init__(use_gpu, embedding_size)
 
+        self.device = 'mps' if use_gpu else 'cpu'
         self.hidden_size = 25
         self.num_lstm_layers = 2
         self.mixture_size = 500
@@ -32,7 +33,7 @@ class ExampleModel(openprotein.BaseModel):
         self.hidden_to_labels = nn.Linear(self.hidden_size * 2,
                                           self.mixture_size, bias=True)  # * 2 for bidirectional
         self.init_hidden(minibatch_size)
-        self.softmax_to_angle = SoftToAngle(self.mixture_size)
+        self.softmax_to_angle = SoftToAngle(self.mixture_size, self.use_gpu)
         self.batch_norm = nn.BatchNorm1d(self.mixture_size)
 
     def init_hidden(self, minibatch_size):
@@ -42,8 +43,8 @@ class ExampleModel(openprotein.BaseModel):
         initial_cell_state = torch.zeros(self.num_lstm_layers * 2,
                                          minibatch_size, self.hidden_size)
         if self.use_gpu:
-            initial_hidden_state = initial_hidden_state.cuda()
-            initial_cell_state = initial_cell_state.cuda()
+            initial_hidden_state = initial_hidden_state.to(self.device)
+            initial_cell_state = initial_cell_state.to(self.device)
         self.hidden_layer = (autograd.Variable(initial_hidden_state),
                              autograd.Variable(initial_cell_state))
 
@@ -62,7 +63,7 @@ class ExampleModel(openprotein.BaseModel):
             .transpose(1, 2)  # minibatch_size, self.mixture_size, -1
         emissions = self.batch_norm(emissions)
         emissions = emissions.transpose(1, 2)  # (minibatch_size, -1, self.mixture_size)
-        probabilities = torch.softmax(emissions, 2)
+        probabilities = torch.softmax(emissions, 2).to(self.base_device)
         output_angles = self.softmax_to_angle(probabilities)\
             .transpose(0, 1)  # max size, minibatch size, 3 (angles)
         backbone_atoms_padded, _ = \
@@ -73,8 +74,9 @@ class ExampleModel(openprotein.BaseModel):
 
 
 class SoftToAngle(nn.Module):
-    def __init__(self, mixture_size):
+    def __init__(self, mixture_size, use_gpu):
         super(SoftToAngle, self).__init__()
+        self.use_gpu = use_gpu
         # Omega Initializer
         omega_components1 = np.random.uniform(0, 1, int(mixture_size*0.1)) # set omega 90/10 pos/neg
         omega_components2 = np.random.uniform(2, math.pi, int(mixture_size*0.9))
@@ -101,8 +103,8 @@ class SoftToAngle(nn.Module):
         omega_input_sin = torch.matmul(x, torch.sin(self.omega_components))
         omega_input_cos = torch.matmul(x, torch.cos(self.omega_components))
 
-        phi = compute_atan2(phi_input_sin, phi_input_cos)
-        psi = compute_atan2(psi_input_sin, psi_input_cos)
-        omega = compute_atan2(omega_input_sin, omega_input_cos)
+        phi = compute_atan2(phi_input_sin, phi_input_cos, self.use_gpu)
+        psi = compute_atan2(psi_input_sin, psi_input_cos, self.use_gpu)
+        omega = compute_atan2(omega_input_sin, omega_input_cos, self.use_gpu)
 
         return torch.cat((phi, psi, omega), 2)
