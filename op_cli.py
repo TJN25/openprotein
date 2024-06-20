@@ -40,16 +40,9 @@ def main():
 
     use_gpu = args.use_gpu
 
-    if use_gpu:
-        if not torch.cuda.is_available() and not torch.backends.mps.is_available():
-            write_out("Error: --use-gpu was set, but no GPU is available.")
-            sys.exit(1)
-        print(torch.get_default_device())
-        if torch.cuda.is_available():
-            torch.set_default_device('cuda')
-        elif torch.backends.mps.is_available():
-            torch.set_default_device('mps')
-        # use_gpu = False
+    if use_gpu and not torch.cuda.is_available():
+        write_out("Error: --use-gpu was set, but no GPU is available.")
+        sys.exit(1)
 
     if not args.hide_ui:
         # start web server
