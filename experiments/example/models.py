@@ -42,8 +42,8 @@ class ExampleModel(openprotein.BaseModel):
         initial_cell_state = torch.zeros(self.num_lstm_layers * 2,
                                          minibatch_size, self.hidden_size)
         if self.use_gpu:
-            initial_hidden_state = initial_hidden_state.cuda()
-            initial_cell_state = initial_cell_state.cuda()
+            initial_hidden_state = initial_hidden_state.to('cuda')
+            initial_cell_state = initial_cell_state.to('cuda')
         self.hidden_layer = (autograd.Variable(initial_hidden_state),
                              autograd.Variable(initial_cell_state))
 

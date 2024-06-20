@@ -20,7 +20,7 @@ def train_model(data_set_identifier, model, train_loader, validation_loader,
     validation_dataset_size = validation_loader.dataset.__len__()
 
     if use_gpu:
-        model = model.cuda()
+        model = model.to('cuda')
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 

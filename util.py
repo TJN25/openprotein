@@ -168,7 +168,7 @@ def calculate_dihedral_angles(atomic_coords, use_gpu):
 
     zero_tensor = torch.zeros(1)
     if use_gpu:
-        zero_tensor = zero_tensor.cuda()
+        zero_tensor = zero_tensor.to('cuda')
 
 
 
@@ -282,8 +282,8 @@ def calc_pairwise_distances(chain_a, chain_b, use_gpu):
     # add small epsilon to avoid boundary issues
     epsilon = 10 ** (-4) * torch.ones(chain_a.size(0), chain_b.size(0))
     if use_gpu:
-        distance_matrix = distance_matrix.cuda()
-        epsilon = epsilon.cuda()
+        distance_matrix = distance_matrix.to('cuda')
+        epsilon = epsilon.to('cuda')
 
     for idx, row in enumerate(chain_a.split(1)):
         distance_matrix[idx] = torch.sum((row.expand_as(chain_b) - chain_b) ** 2, 1).view(1, -1)
@@ -422,7 +422,7 @@ def pass_messages(aa_features, message_transformation, use_gpu):
 
     eye_inverted = torch.ones(eye.size(), dtype=torch.uint8) - eye
     if use_gpu:
-        eye_inverted = eye_inverted.cuda()
+        eye_inverted = eye_inverted.to('cuda')
     features_repeated = aa_features.repeat((aa_count, 1)).view((aa_count, aa_count, feature_size))
     # (aa_count^2 - aa_count) x 2 x aa_features     (all pairs except for reflexive connections)
     aa_messages = torch.stack((features_repeated.transpose(0, 1), features_repeated))\
@@ -476,8 +476,8 @@ def dihedral_to_point(dihedral, use_gpu, bond_lengths=BOND_LENGTHS,
     r_sin_theta = bond_lengths * torch.sin(PI_TENSOR - bond_angles)
 
     if use_gpu:
-        r_cos_theta = r_cos_theta.cuda()
-        r_sin_theta = r_sin_theta.cuda()
+        r_cos_theta = r_cos_theta.to('cuda')
+        r_sin_theta = r_sin_theta.to('cuda')
 
     point_x = r_cos_theta.view(1, 1, -1).repeat(num_steps, batch_size, 1)
     point_y = torch.cos(dihedral) * r_sin_theta
@@ -530,7 +530,7 @@ def point_to_coordinate(points, use_gpu, num_fragments):
                 .repeat([num_fragments * batch_size, 1])\
                 .view(num_fragments, batch_size, NUM_DIMENSIONS)
         if use_gpu:
-            row_tensor = row_tensor.cuda()
+            row_tensor = row_tensor.to('cuda')
         init_coords.append(row_tensor)
 
     init_coords = Triplet(*init_coords)  # NUM_DIHEDRALS x [NUM_FRAGS, BATCH_SIZE, NUM_DIMENSIONS]

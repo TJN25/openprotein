@@ -44,7 +44,7 @@ class BaseModel(nn.Module):
         embed_tensor = (arange_tensor == data_tensor).float()
 
         if self.use_gpu:
-            embed_tensor = embed_tensor.cuda()
+            embed_tensor = embed_tensor.to('cuda')
 
         end = time.time()
         write_out("Embed time:", end - start_compute_embed)
@@ -58,7 +58,7 @@ class BaseModel(nn.Module):
             self._get_network_emissions(original_aa_string)
         actual_coords_list_padded = torch.nn.utils.rnn.pad_sequence(actual_coords_list)
         if self.use_gpu:
-            actual_coords_list_padded = actual_coords_list_padded.cuda()
+            actual_coords_list_padded = actual_coords_list_padded.to('cuda')
         start = time.time()
         if isinstance(_batch_sizes[0], int):
             _batch_sizes = torch.tensor(_batch_sizes)
@@ -71,8 +71,8 @@ class BaseModel(nn.Module):
         #                                           batch_sizes)
         write_out("Angle calculation time:", time.time() - start)
         if self.use_gpu:
-            emissions_actual = emissions_actual.cuda()
-            # drmsd_avg = drmsd_avg.cuda()
+            emissions_actual = emissions_actual.to('cuda')
+            # drmsd_avg = drmsd_avg.to('cuda')
         angular_loss = calc_angular_difference(emissions, emissions_actual)
 
         return angular_loss  # + drmsd_avg
@@ -140,8 +140,8 @@ class BaseModel(nn.Module):
         pos = data_total[0][1]
         pos_pred = data_total[0][3]
         if self.use_gpu:
-            pos = pos.cuda()
-            pos_pred = pos_pred.cuda()
+            pos = pos.to('cuda')
+            pos_pred = pos_pred.to('cuda')
         angles = calculate_dihedral_angles(pos, self.use_gpu)
         angles_pred = calculate_dihedral_angles(pos_pred, self.use_gpu)
         write_to_pdb(get_structure_from_angles(prim, angles), "test")
