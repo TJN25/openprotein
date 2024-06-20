@@ -3,3 +3,4 @@
 __pycache__
 .vscode/settings.json
 pyrightconfig.json
+output/models/2024*
