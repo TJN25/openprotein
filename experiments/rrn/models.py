@@ -4,10 +4,14 @@ This file is part of the OpenProtein project.
 For license information, please see the LICENSE file in the root directory.
 """
 import time
-
+import os
 import torch
 import torch.nn as nn
 import openprotein
+
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
 
 from util import initial_pos_from_aa_string, \
     pass_messages, write_out, calc_avg_drmsd_over_minibatch
@@ -41,7 +45,7 @@ class RrnModel(openprotein.BaseModel):
         embedding_padded = self.embed(original_aa_string)
 
         if self.use_gpu:
-            backbone_atoms_padded = backbone_atoms_padded.cuda()
+            backbone_atoms_padded = backbone_atoms_padded.to(torch_device)
 
         for _ in range(self.recurrent_steps):
             combined_features = torch.cat(
@@ -71,7 +75,7 @@ class RrnModel(openprotein.BaseModel):
             self._get_network_emissions(original_aa_string)
         actual_coords_list_padded = torch.nn.utils.rnn.pad_sequence(actual_coords_list)
         if self.use_gpu:
-            actual_coords_list_padded = actual_coords_list_padded.cuda()
+            actual_coords_list_padded = actual_coords_list_padded.to(torch_device)
         start = time.time()
         if isinstance(batch_sizes[0], int):
             batch_sizes = torch.tensor(batch_sizes)
@@ -81,6 +85,6 @@ class RrnModel(openprotein.BaseModel):
                                                   batch_sizes)
         write_out("drmsd calculation time:", time.time() - start)
         if self.use_gpu:
-            drmsd_avg = drmsd_avg.cuda()
+            drmsd_avg = drmsd_avg.to(torch_device)
 
         return drmsd_avg

@@ -40,7 +40,8 @@ def main():
 
     use_gpu = args.use_gpu
 
-    if use_gpu and not torch.cuda.is_available():
+    # if use_gpu and not torch.cuda.is_available():
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         write_out("Error: --use-gpu was set, but no GPU is available.")
         sys.exit(1)
 

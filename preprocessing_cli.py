@@ -22,7 +22,8 @@ def main():
     args, _unknown = parser.parse_known_args()
 
     uge_gpu = False
-    if torch.cuda.is_available():
+    # if torch.cuda.is_available():
+    if torch.cuda.is_available() or torch.backends.mps.is_available():
         write_out("CUDA is available, using GPU")
         uge_gpu = True
 

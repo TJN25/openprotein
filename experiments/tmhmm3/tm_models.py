@@ -8,6 +8,7 @@ import sys
 import glob
 import pickle
 from typing import Tuple
+import os
 
 import numpy as np
 import torch
@@ -20,6 +21,11 @@ from experiments.tmhmm3.tm_util import is_topologies_equal
 from experiments.tmhmm3.tm_util import original_labels_to_fasta
 from pytorchcrf.torchcrf import CRF
 from util import write_out, get_experiment_id
+
+
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
 
 # seed random generator for reproducibility
 torch.manual_seed(1)
@@ -91,12 +97,12 @@ class TMHMM3(openprotein.BaseModel):
 
         # if on GPU, move state to GPU memory
         if self.use_gpu:
-            self.crf_model = self.crf_model.cuda()
-            self.bi_lstm = self.bi_lstm.cuda()
-            self.hidden_to_labels = self.hidden_to_labels.cuda()
-            crf_transitions_mask = crf_transitions_mask.cuda()
-            crf_start_mask = crf_start_mask.cuda()
-            crf_end_mask = crf_end_mask.cuda()
+            self.crf_model = self.crf_model.to(torch_device)
+            self.bi_lstm = self.bi_lstm.to(torch_device)
+            self.hidden_to_labels = self.hidden_to_labels.to(torch_device)
+            crf_transitions_mask = crf_transitions_mask.to(torch_device)
+            crf_start_mask = crf_start_mask.to(torch_device)
+            crf_end_mask = crf_end_mask.to(torch_device)
 
         # compute mask matrix from allow transitions list
         for i in range(num_tags):
@@ -198,7 +204,7 @@ class TMHMM3(openprotein.BaseModel):
                 tensor = list([self.encode_amino_acid(aa) for aa in aa_list])
                 tensor = torch.FloatTensor(tensor)
             if self.use_gpu:
-                tensor = tensor.cuda()
+                tensor = tensor.to(torch_device)
             embed_list.append(tensor)
         return embed_list
 
@@ -207,8 +213,8 @@ class TMHMM3(openprotein.BaseModel):
         initial_hidden_state = torch.zeros(1 * 2, minibatch_size, self.hidden_size)
         initial_cell_state = torch.zeros(1 * 2, minibatch_size, self.hidden_size)
         if self.use_gpu:
-            initial_hidden_state = initial_hidden_state.cuda()
-            initial_cell_state = initial_cell_state.cuda()
+            initial_hidden_state = initial_hidden_state.to(torch_device)
+            initial_cell_state = initial_cell_state.to(torch_device)
         self.hidden_layer = (autograd.Variable(initial_hidden_state),
                              autograd.Variable(initial_cell_state))
 
@@ -221,9 +227,9 @@ class TMHMM3(openprotein.BaseModel):
         outin_select = torch.ones(1, dtype=torch.long)
         signal_select = torch.ones(1, dtype=torch.long) * 2
         if emissions.is_cuda:
-            inout_select = inout_select.cuda()
-            outin_select = outin_select.cuda()
-            signal_select = signal_select.cuda()
+            inout_select = inout_select.to(torch_device)
+            outin_select = outin_select.to(torch_device)
+            signal_select = signal_select.to(torch_device)
         inout = torch.index_select(emissions, 2, inout_select)
         outin = torch.index_select(emissions, 2, outin_select)
         signal = torch.index_select(emissions, 2, signal_select)
@@ -242,7 +248,7 @@ class TMHMM3(openprotein.BaseModel):
         input_sequences_padded = torch.nn.utils.rnn.pad_sequence(input_sequences)
         batch_sizes = torch.IntTensor(list([x.size(0) for x in input_sequences]))
         if input_sequences_padded.is_cuda:
-            batch_sizes = batch_sizes.cuda()
+            batch_sizes = batch_sizes.to(torch_device)
 
         actual_labels = torch.nn.utils.rnn.pad_sequence([l for l in labels_to_use])
         emissions = self._get_network_emissions(input_sequences_padded)
@@ -266,7 +272,7 @@ class TMHMM3(openprotein.BaseModel):
 
     def forward(self, input_sequences_padded) -> Tuple[torch.Tensor, torch.Tensor]:
         if input_sequences_padded.is_cuda or input_sequences_padded.is_cuda:
-            input_sequences_padded = input_sequences_padded.cuda()
+            input_sequences_padded = input_sequences_padded.to(torch_device)
         emissions = self._get_network_emissions(input_sequences_padded)
 
         return emissions, \

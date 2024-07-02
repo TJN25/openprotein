@@ -6,6 +6,7 @@ For license information, please see the LICENSE file in the root directory.
 
 import math
 import random
+import os
 from typing import List
 
 import torch
@@ -15,6 +16,9 @@ import numpy as np
 from pytorchcrf.torchcrf import CRF
 from util import write_out
 
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
 
 class TMDataset(Dataset):
     def __init__(self,
@@ -131,9 +135,9 @@ class TMDataset(Dataset):
 
             if use_gpu:
                 if labels is not None:
-                    labels = labels.cuda()
-                remapped_labels_crf_hmm = remapped_labels_crf_hmm.cuda()
-                remapped_labels_crf_marg = remapped_labels_crf_marg.cuda()
+                    labels = labels.to(torch_device)
+                remapped_labels_crf_hmm = remapped_labels_crf_hmm.to(torch_device)
+                remapped_labels_crf_marg = remapped_labels_crf_marg.to(torch_device)
             aa_list.append(aa_tmp_list_tensor)
             labels_list.append(labels)
             remapped_labels_list_crf_hmm.append(remapped_labels_crf_hmm)
@@ -298,7 +302,7 @@ def label_list_to_topology(labels):
     if isinstance(labels, torch.LongTensor):
         zero_tensor = torch.LongTensor([0])
         if labels.is_cuda:
-            zero_tensor = zero_tensor.cuda()
+            zero_tensor = zero_tensor.to(torch_device)
 
         unique, count = torch.unique_consecutive(labels, return_counts=True)
         top_list = [torch.cat((zero_tensor, labels[0]))]
@@ -339,10 +343,10 @@ def remapped_labels_hmm_to_orginal_labels(labels):
         torch_twos = torch.ones(labels.size(), dtype=torch.long) * 2
 
         if labels.is_cuda:
-            labels = labels.cuda()
-            torch_zeros = labels.cuda()
-            torch_ones = labels.cuda()
-            torch_twos = labels.cuda()
+            labels = labels.to(torch_device)
+            torch_zeros = labels.to(torch_device)
+            torch_ones = labels.to(torch_device)
+            torch_twos = labels.to(torch_device)
 
         labels = torch.where((labels >= 5) & (labels < 45), torch_zeros, labels)
         labels = torch.where((labels >= 45) & (labels < 85), torch_ones, labels)
@@ -353,7 +357,7 @@ def remapped_labels_hmm_to_orginal_labels(labels):
 def batch_sizes_to_mask(batch_sizes: torch.Tensor) -> torch.Tensor:
     arange = torch.arange(batch_sizes[0], dtype=torch.int32)
     if batch_sizes.is_cuda:
-        arange = arange.cuda()
+        arange = arange.to(torch_device)
     res = (arange.expand(batch_sizes.size(0), batch_sizes[0])
            < batch_sizes.unsqueeze(1)).transpose(0, 1)
     return res
@@ -393,7 +397,7 @@ def get_predicted_type_from_labels(labels):
         torch_zero = torch.zeros(1)
 
         if labels.is_cuda:
-            torch_zero = torch_zero.cuda()
+            torch_zero = torch_zero.to(torch_device)
 
         contains_0 = (labels == 0).int().sum() > 0
         contains_1 = (labels == 1).int().sum() > 0
@@ -549,7 +553,7 @@ def decode(emissions, batch_sizes, start_transitions, transitions, end_transitio
     mask = batch_sizes_to_mask(batch_sizes)
 
     if emissions.is_cuda:
-        mask = mask.cuda()
+        mask = mask.to(torch_device)
     crf_model = CRF(int(start_transitions.size(0)))
     initialize_crf_parameters(crf_model,
                               start_transitions=start_transitions,
@@ -559,7 +563,7 @@ def decode(emissions, batch_sizes, start_transitions, transitions, end_transitio
     for l in crf_model.decode(emissions, mask=mask):
         val = torch.tensor(l).unsqueeze(1)
         if emissions.is_cuda:
-            val = val.cuda()
+            val = val.to(torch_device)
         labels_predicted.append(val)
 
 
@@ -575,12 +579,12 @@ def decode(emissions, batch_sizes, start_transitions, transitions, end_transitio
 
 
     if emissions.is_cuda:
-        predicted_types = predicted_types.cuda()
+        predicted_types = predicted_types.to(torch_device)
 
     # if all O's, change to all I's (by convention)
     torch_zero = torch.zeros(1, dtype=torch.long)
     if emissions.is_cuda:
-        torch_zero = torch_zero.cuda()
+        torch_zero = torch_zero.to(torch_device)
     for idx, labels in enumerate(predicted_labels):
         predicted_labels[idx] = \
             labels - torch.where(torch.eq(labels, 4).min() == 1, torch_zero + 1, torch_zero)

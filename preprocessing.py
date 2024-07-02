@@ -16,6 +16,9 @@ import torch
 from util import calculate_dihedral_angles_over_minibatch, \
     get_backbone_positions_from_angles, encode_primary_string, write_out
 
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
 
 MAX_SEQUENCE_LENGTH = 2000
 
@@ -180,7 +183,7 @@ def process_file(input_file, output_file, use_gpu):
         pos_angstrom = pos / 100
 
         if use_gpu:
-            pos_angstrom = pos_angstrom.cuda()
+            pos_angstrom = pos_angstrom.to(torch_device)
 
         # map to angles and back to tertiary
         angles, batch_sizes = calculate_dihedral_angles_over_minibatch(pos_angstrom,

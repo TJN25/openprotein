@@ -5,11 +5,16 @@ For license information, please see the LICENSE file in the root directory.
 """
 
 import time
+import os
 import numpy as np
 import requests
 import torch.optim as optim
 from util import set_experiment_id, write_out, write_model_to_disk, write_result_summary
 
+
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
 
 
 def train_model(data_set_identifier, model, train_loader, validation_loader,
@@ -20,7 +25,7 @@ def train_model(data_set_identifier, model, train_loader, validation_loader,
     validation_dataset_size = validation_loader.dataset.__len__()
 
     if use_gpu:
-        model = model.cuda()
+        model = model.to(torch_device)
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 

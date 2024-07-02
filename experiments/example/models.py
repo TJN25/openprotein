@@ -5,6 +5,7 @@ For license information, please see the LICENSE file in the root directory.
 """
 
 import math
+import os
 import torch
 import torch.autograd as autograd
 import torch.nn as nn
@@ -13,6 +14,11 @@ from torch.nn.utils.rnn import pack_padded_sequence
 
 import openprotein
 from util import get_backbone_positions_from_angles, compute_atan2
+
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
+
 
 # seed random generator for reproducibility
 torch.manual_seed(1)
@@ -42,8 +48,8 @@ class ExampleModel(openprotein.BaseModel):
         initial_cell_state = torch.zeros(self.num_lstm_layers * 2,
                                          minibatch_size, self.hidden_size)
         if self.use_gpu:
-            initial_hidden_state = initial_hidden_state.cuda()
-            initial_cell_state = initial_cell_state.cuda()
+            initial_hidden_state = initial_hidden_state.to(torch_device)
+            initial_cell_state = initial_cell_state.to(torch_device)
         self.hidden_layer = (autograd.Variable(initial_hidden_state),
                              autograd.Variable(initial_cell_state))
 

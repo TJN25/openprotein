@@ -18,11 +18,17 @@ from Bio.Data.IUPACData import protein_letters_1to3
 import numpy as np
 from torch.nn.utils.rnn import pad_sequence
 
+torch_device = os.environ['USE_GPU']
+if torch_device != 'mps' or torch_device != 'cuda':
+    torch_device = 'cpu'
+
 AA_ID_DICT = {'A': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'K': 9,
               'L': 10, 'M': 11, 'N': 12, 'P': 13, 'Q': 14, 'R': 15, 'S': 16, 'T': 17,
               'V': 18, 'W': 19, 'Y': 20}
 
-PI_TENSOR = torch.tensor([3.141592])
+PI_TENSOR = torch.tensor([3.141592]).to(torch_device)
+# PI_TENSOR.to(torch_device)
+
 
 def contruct_dataloader_from_disk(filename, minibatch_size):
     return torch.utils.data.DataLoader(H5PytorchDataset(filename),
@@ -145,10 +151,10 @@ def calculate_dihedral_angles_over_minibatch(atomic_coords_padded, batch_sizes, 
 
     for idx, coordinate in enumerate(atomic_coords.split(1, dim=0)):
         angles_from_coords = torch.index_select(
-            coordinate.squeeze(0),
+            coordinate.to('cpu').squeeze(0),
             0,
             torch.arange(int(batch_sizes[idx].item()))
-        )
+        ).to(torch_device)
         angles.append(calculate_dihedral_angles(angles_from_coords, use_gpu))
 
     return torch.nn.utils.rnn.pad_sequence(angles), batch_sizes
@@ -168,14 +174,14 @@ def calculate_dihedral_angles(atomic_coords, use_gpu):
 
     zero_tensor = torch.zeros(1)
     if use_gpu:
-        zero_tensor = zero_tensor.cuda()
+        zero_tensor = zero_tensor.to(torch_device)
 
 
 
-    angles = torch.cat((zero_tensor,
-                        zero_tensor,
+    angles = torch.cat((zero_tensor.to(torch_device),
+                        zero_tensor.to(torch_device),
                         compute_dihedral_list(atomic_coords),
-                        zero_tensor)).view(-1, 3)
+                        zero_tensor.to(torch_device))).view(-1, 3)
     return angles
 
 def compute_cross(tensor_a, tensor_b, dim):
@@ -206,11 +212,11 @@ def compute_cross(tensor_a, tensor_b, dim):
 def compute_atan2(y_coord, x_coord):
     # TODO: figure out of eps is needed here
     eps = 10 ** (-4)
-    ans = torch.atan(y_coord / (x_coord + eps)) # x > 0
-    ans = torch.where((y_coord >= 0) & (x_coord < 0), ans + PI_TENSOR, ans)
-    ans = torch.where((y_coord < 0) & (x_coord < 0), ans - PI_TENSOR, ans)
-    ans = torch.where((y_coord > 0) & (x_coord == 0), PI_TENSOR / 2, ans)
-    ans = torch.where((y_coord < 0) & (x_coord == 0), -PI_TENSOR / 2, ans)
+    ans = torch.atan(y_coord / (x_coord + eps)).to(torch_device) # x > 0
+    ans = torch.where((y_coord.to(torch_device) >= 0) & (x_coord.to(torch_device) < 0), ans + PI_TENSOR, ans)
+    ans = torch.where((y_coord.to(torch_device) < 0) & (x_coord.to(torch_device) < 0), ans - PI_TENSOR, ans)
+    ans = torch.where((y_coord.to(torch_device) > 0) & (x_coord.to(torch_device) == 0), PI_TENSOR / 2, ans)
+    ans = torch.where((y_coord.to(torch_device) < 0) & (x_coord.to(torch_device) == 0), -PI_TENSOR / 2, ans)
     return ans
 
 
@@ -220,13 +226,13 @@ def compute_dihedral_list(atomic_coords):
     ba_normalized = ba / ba.norm(dim=1).unsqueeze(1)
     ba_neg = -1 * ba_normalized
 
-    n1_vec = compute_cross(ba_normalized[:-2], ba_neg[1:-1], dim=1)
-    n2_vec = compute_cross(ba_neg[1:-1], ba_normalized[2:], dim=1)
+    n1_vec = compute_cross(ba_normalized[:-2].to('cpu'), ba_neg[1:-1].to('cpu'), dim=1)
+    n2_vec = compute_cross(ba_neg[1:-1].to('cpu'), ba_normalized[2:].to('cpu'), dim=1)
 
     n1_vec_normalized = n1_vec / n1_vec.norm(dim=1).unsqueeze(1)
     n2_vec_normalized = n2_vec / n2_vec.norm(dim=1).unsqueeze(1)
 
-    m1_vec = compute_cross(n1_vec_normalized, ba_neg[1:-1], dim=1)
+    m1_vec = compute_cross(n1_vec_normalized.to('cpu'), ba_neg[1:-1].to('cpu'), dim=1)
 
     x_value = torch.sum(n1_vec_normalized * n2_vec_normalized, dim=1)
     y_value = torch.sum(m1_vec * n2_vec_normalized, dim=1)
@@ -282,8 +288,8 @@ def calc_pairwise_distances(chain_a, chain_b, use_gpu):
     # add small epsilon to avoid boundary issues
     epsilon = 10 ** (-4) * torch.ones(chain_a.size(0), chain_b.size(0))
     if use_gpu:
-        distance_matrix = distance_matrix.cuda()
-        epsilon = epsilon.cuda()
+        distance_matrix = distance_matrix.to(torch_device)
+        epsilon = epsilon.to(torch_device)
 
     for idx, row in enumerate(chain_a.split(1)):
         distance_matrix[idx] = torch.sum((row.expand_as(chain_b) - chain_b) ** 2, 1).view(1, -1)
@@ -329,8 +335,8 @@ def calc_rmsd(chain_a, chain_b):
 
 
 def calc_angular_difference(values_1, values_2):
-    values_1 = values_1.transpose(0, 1).contiguous()
-    values_2 = values_2.transpose(0, 1).contiguous()
+    values_1 = values_1.transpose(0, 1).contiguous().to(torch_device)
+    values_2 = values_2.transpose(0, 1).contiguous().to(torch_device)
     acc = 0
     for idx, _ in enumerate(values_1):
         assert values_1[idx].shape[1] == 3
@@ -422,7 +428,7 @@ def pass_messages(aa_features, message_transformation, use_gpu):
 
     eye_inverted = torch.ones(eye.size(), dtype=torch.uint8) - eye
     if use_gpu:
-        eye_inverted = eye_inverted.cuda()
+        eye_inverted = eye_inverted.to(torch_device)
     features_repeated = aa_features.repeat((aa_count, 1)).view((aa_count, aa_count, feature_size))
     # (aa_count^2 - aa_count) x 2 x aa_features     (all pairs except for reflexive connections)
     aa_messages = torch.stack((features_repeated.transpose(0, 1), features_repeated))\
@@ -455,8 +461,8 @@ def load_model_from_disk(path, force_cpu=True):
 # Constants
 NUM_DIMENSIONS = 3
 NUM_DIHEDRALS = 3
-BOND_LENGTHS = torch.tensor([145.801, 152.326, 132.868], dtype=torch.float32)
-BOND_ANGLES = torch.tensor([2.124, 1.941, 2.028], dtype=torch.float32)
+BOND_LENGTHS = torch.tensor([145.801, 152.326, 132.868], dtype=torch.float32).to(torch_device)
+BOND_ANGLES = torch.tensor([2.124, 1.941, 2.028], dtype=torch.float32).to(torch_device)
 
 
 def dihedral_to_point(dihedral, use_gpu, bond_lengths=BOND_LENGTHS,
@@ -475,15 +481,15 @@ def dihedral_to_point(dihedral, use_gpu, bond_lengths=BOND_LENGTHS,
     r_cos_theta = bond_lengths * torch.cos(PI_TENSOR - bond_angles)
     r_sin_theta = bond_lengths * torch.sin(PI_TENSOR - bond_angles)
 
-    if use_gpu:
-        r_cos_theta = r_cos_theta.cuda()
-        r_sin_theta = r_sin_theta.cuda()
+    # if use_gpu:
+    #     r_cos_theta = r_cos_theta.to(torch_device)
+    #     r_sin_theta = r_sin_theta.to(torch_device)
 
     point_x = r_cos_theta.view(1, 1, -1).repeat(num_steps, batch_size, 1)
     point_y = torch.cos(dihedral) * r_sin_theta
     point_z = torch.sin(dihedral) * r_sin_theta
 
-    point = torch.stack([point_x, point_y, point_z])
+    point = torch.stack([point_x.to(torch_device), point_y, point_z])
     point_perm = point.permute(1, 3, 2, 0)
     point_final = point_perm.contiguous().view(num_steps * NUM_DIHEDRALS,
                                                batch_size,
@@ -530,7 +536,7 @@ def point_to_coordinate(points, use_gpu, num_fragments):
                 .repeat([num_fragments * batch_size, 1])\
                 .view(num_fragments, batch_size, NUM_DIMENSIONS)
         if use_gpu:
-            row_tensor = row_tensor.cuda()
+            row_tensor = row_tensor.to(torch_device)
         init_coords.append(row_tensor)
 
     init_coords = Triplet(*init_coords)  # NUM_DIHEDRALS x [NUM_FRAGS, BATCH_SIZE, NUM_DIMENSIONS]
@@ -566,8 +572,8 @@ def point_to_coordinate(points, use_gpu, num_fragments):
         Note the different parameter dimensions.
         :return: Coordinates of the atom/ fragment.
         """
-        bc = F.normalize(prev_three_coords.c - prev_three_coords.b, dim=-1)
-        n = F.normalize(compute_cross(prev_three_coords.b - prev_three_coords.a,
+        bc = F.normalize(prev_three_coords.c.to('cpu') - prev_three_coords.b.to('cpu'), dim=-1).to('cpu')
+        n = F.normalize(compute_cross(prev_three_coords.b.to('cpu') - prev_three_coords.a.to('cpu'),
                                       bc, dim=2 if multi_m else 1), dim=-1)
         if multi_m:  # multiple fragments, one atom at a time
             m = torch.stack([bc, compute_cross(n, bc, dim=2), n]).permute(1, 2, 3, 0)
@@ -575,8 +581,8 @@ def point_to_coordinate(points, use_gpu, num_fragments):
             s = point.shape + (3,)
             m = torch.stack([bc, compute_cross(n, bc, dim=1), n]).permute(1, 2, 0)
             m = m.repeat(s[0], 1, 1).view(s)
-        coord = torch.squeeze(torch.matmul(m, point.unsqueeze(3)),
-                              dim=3) + prev_three_coords.c
+        coord = torch.squeeze(torch.matmul(m.to(torch_device), point.unsqueeze(3).to(torch_device)).to(torch_device),
+                              dim=3).to(torch_device) + prev_three_coords.c.to(torch_device)
         return coord
 
     # Loop over FRAG_SIZE in NUM_FRAGS parallel fragments, sequentially
