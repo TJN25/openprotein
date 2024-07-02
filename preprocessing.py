@@ -16,7 +16,7 @@ import torch
 from util import calculate_dihedral_angles_over_minibatch, \
     get_backbone_positions_from_angles, encode_primary_string, write_out
 
-torch_device = os.environ['USE_GPU']
+torch_device = os.environ['OPENPROTEIN_USE_GPU']
 if torch_device != 'mps' or torch_device != 'cuda':
     torch_device = 'cpu'
 

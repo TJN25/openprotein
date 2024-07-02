@@ -1,0 +1,15 @@
+#!/bin/bash 
+
+export OPENPROTEIN_USE_GPU='cpu'
+
+if [[ $* == *--use-gpu* ]]
+then
+	if [[ $(uname -s) == 'Darwin' ]]
+	then
+		export OPENPROTEIN_USE_GPU='mps'
+	else
+		export OPENPROTEIN_USE_GPU='cuda'
+	fi
+fi
+
+python __main__.py "$@"

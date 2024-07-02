@@ -12,7 +12,7 @@ import torch.optim as optim
 from util import set_experiment_id, write_out, write_model_to_disk, write_result_summary
 
 
-torch_device = os.environ['USE_GPU']
+torch_device = os.environ['OPENPROTEIN_USE_GPU']
 if torch_device != 'mps' or torch_device != 'cuda':
     torch_device = 'cpu'
 

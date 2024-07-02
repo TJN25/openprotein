@@ -23,7 +23,7 @@ from pytorchcrf.torchcrf import CRF
 from util import write_out, get_experiment_id
 
 
-torch_device = os.environ['USE_GPU']
+torch_device = os.environ['OPENPROTEIN_USE_GPU']
 if torch_device != 'mps' or torch_device != 'cuda':
     torch_device = 'cpu'
 
